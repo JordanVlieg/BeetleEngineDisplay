@@ -28,13 +28,14 @@ const unsigned long updateInterval = 1000;
 const bool enableTouch = true;
 
 // Variables
-volatile bool pulse = false;
+volatile bool tachPulse = true;
 int oilTemp = 0; int cyl2Temp = 0; int cyl3Temp = 0; int oilPressure = 0;
 unsigned long lastScreenFlash = 0;
 unsigned long lastUiUpdate = 0;
 float rpm = 0;
-unsigned long lastPulseMicros = 0;
-unsigned long pulseMicros = 10;
+volatile unsigned long lastPulseMicros = 0;
+volatile unsigned long pulseMicros = 10;
+volatile unsigned long delta = 10;
 float rpmArr[10] = {0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
 int rpmPtr = 0;
 uint32_t lastOilTempColour = TFT_BLACK;uint32_t lastOilPressureColour = TFT_BLACK;uint32_t lastCyl2Colour = TFT_BLACK;uint32_t lastCyl3Colour = TFT_BLACK;uint32_t lastTachColour = TFT_BLACK;uint32_t globalBgColour = TFT_BLACK;
@@ -54,6 +55,7 @@ enum displayMode {
 
 void setup(void) {
   Serial.begin(115200);
+  lastPulseMicros = micros();
 
   delay(10);
 
@@ -83,7 +85,7 @@ void setup(void) {
     delay(500);
   }
 
-  pinMode(16, INPUT_PULLUP);
+  pinMode(16, INPUT);
   attachInterrupt(digitalPinToInterrupt(16), pulseDetected, RISING);
 
     //create a task that will be executed in the Task1code() function, with priority 1 and executed on core 0
@@ -92,7 +94,7 @@ void setup(void) {
                     "WifiTask",
                     50000,       /* Stack size of task */
                     NULL,
-                    1,
+                    10,
                     &wifiTask,
                     0); 
 
@@ -100,7 +102,7 @@ void setup(void) {
 }
 
 void loop() {
-  if (pulse) {
+  if (tachPulse) {
     handlePulse();
   }
   else {
@@ -147,7 +149,7 @@ void checkForTouch() {
   if (enableTouch && ts.tirqTouched() && ts.touched()) {
     mode = (displayMode)((mode + 1) % 3);
     tft.fillScreen(globalBgColour);
-    delay(250);
+    vTaskDelay(pdMS_TO_TICKS(250));
   }
 }
 
@@ -160,20 +162,16 @@ void calculateAvgRpm() {
 }
 
 void handlePulse() {
-  pulse = false;
-  lastPulseMicros = pulseMicros;
-  pulseMicros = micros();
-  unsigned long tentativeRpm = 30000000 / (pulseMicros - lastPulseMicros);
-  if (tentativeRpm < 10000) { // Filter out noise
-    float avgRatio = rpm / (float)tentativeRpm;
-    float prevRatio = rpmArr[rpmPtr] / (float)tentativeRpm;
-    int nextPtr = (rpmPtr + 1) % 10;
-    bool isntTooFast = avgRatio < 1.4 || prevRatio < 1.4;
-    bool isntTooSlow = avgRatio > 0.5;
-    if ((isntTooFast && isntTooSlow) || rpmArr[nextPtr] == 0) {
-      rpmArr[nextPtr] = tentativeRpm;
-      rpmPtr = nextPtr;
-    }
+  unsigned long tentativeRpm = 30000000 / delta;
+  float avgRatio = (float)tentativeRpm / rpm;
+  float prevRatio = (float)tentativeRpm / rpmArr[rpmPtr];
+  int nextPtr = (rpmPtr + 1) % 10;
+  bool isntTooFast = avgRatio < 1.2 || prevRatio < 1.2;
+  bool isntTooSlow = avgRatio > 0.5;
+  if ((isntTooFast && isntTooSlow) || rpmArr[nextPtr] == 0) {
+    tachPulse = false;
+    rpmArr[nextPtr] = tentativeRpm;
+    rpmPtr = nextPtr;
   }
 }
 
@@ -183,10 +181,8 @@ void getDataFromWifi(void * pvParameters) {
   for(;;) {
   // Use NetworkClient class to create TCP connections
     if (millis() - lastFetch > updateInterval) {
-      lastFetch = millis();
-
       if (!client.connect(host, port)) {
-        return;
+        continue;
       }
 
       client.print(String("GET ") + "/csv" + " HTTP/1.1\r\n" + "Host: " + host + "\r\n" + "Connection: close\r\n\r\n");
@@ -196,15 +192,16 @@ void getDataFromWifi(void * pvParameters) {
         if (millis() - timeout > 300) {
           Serial.println(">>> Client Timeout !");
           client.stop();
-          return;
+          break;
         }
       }
 
+      lastFetch = millis();
       while (client.available()) {
         String line = client.readStringUntil('\r');
         
         int startIndex = 0;
-        int endIndex = line.indexOf(",", startIndex);;
+        int endIndex = line.indexOf(",", startIndex);
         int counter = 0;
         String value;
 
@@ -229,6 +226,8 @@ void getDataFromWifi(void * pvParameters) {
           counter++;
         }
       }
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(updateInterval/2));
     }
   }
   vTaskDelete(NULL);
@@ -411,5 +410,11 @@ void renderCylinder3() {
 }
 
 void pulseDetected() {
-  pulse = true;
+  pulseMicros = micros();
+  unsigned long d = pulseMicros - lastPulseMicros;
+  if (d > 3000) { // Filter out trash that would be more than 10k RPM
+    lastPulseMicros = pulseMicros;
+    delta = d;
+    tachPulse = true;
+  }
 }
