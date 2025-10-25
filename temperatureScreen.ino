@@ -1,5 +1,5 @@
 #include <SPI.h>
-#include <TFT_eSPI.h> // Hardware-specific library
+#include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 #include <WiFi.h>
 #include <WiFiMulti.h>
@@ -32,11 +32,10 @@ volatile bool pulse = false;
 int oilTemp = 0; int cyl2Temp = 0; int cyl3Temp = 0; int oilPressure = 0;
 unsigned long lastScreenFlash = 0;
 unsigned long lastUiUpdate = 0;
-unsigned long rpm = 0;
+float rpm = 0;
 unsigned long lastPulseMicros = 0;
 unsigned long pulseMicros = 10;
-unsigned long delta = 0;
-unsigned long rpmArr[10] = {0,0,0,0,0,0,0,0,0,0};
+float rpmArr[10] = {0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
 int rpmPtr = 0;
 uint32_t lastOilTempColour = TFT_BLACK;uint32_t lastOilPressureColour = TFT_BLACK;uint32_t lastCyl2Colour = TFT_BLACK;uint32_t lastCyl3Colour = TFT_BLACK;uint32_t lastTachColour = TFT_BLACK;uint32_t globalBgColour = TFT_BLACK;
 WiFiMulti WiFiMulti;
@@ -102,34 +101,32 @@ void setup(void) {
 
 void loop() {
   if (pulse) {
-    pulse = false;
-    lastPulseMicros = pulseMicros;
-    pulseMicros = micros();
-    delta = pulseMicros - lastPulseMicros;
-    unsigned long tentative = 30000000 / delta;
-    if (tentative < 10000) {
-      float difference = (double)rpm / (double) tentative;
-      if ((difference < 1.5 && difference > 0.6) || rpmArr[rpmPtr] == 0) {
-        rpmArr[rpmPtr] = tentative;
-        rpmPtr = (rpmPtr + 1) % 10;
-      }
-    }
+    handlePulse();
   }
   else {
-    int sum = 0;
-    for (int i = 0; i < 10; i++) {
-      sum += rpmArr[i];
-    }
-    rpm = sum / 10;
-
-    if (enableTouch && ts.tirqTouched() && ts.touched()) {
-      mode = (displayMode)((mode + 1) % 3);
-      tft.fillScreen(globalBgColour);
-      delay(250);
-    }
-
+    calculateAvgRpm();
+    checkForTouch();
     unsigned long nowMs = millis();
-    if (oilTemp >= oilEmergTemp || cyl2Temp >= cylEmergTemp || cyl3Temp >= cylEmergTemp || rpm >= tachEmerg) {
+    maybeFlashWarningScreen(nowMs);
+    
+    if (nowMs - lastUiUpdate > uiPeriod) {
+      lastUiUpdate = nowMs;
+      renderCylinder2();
+      renderCylinder3();
+      renderOilTemp();
+      renderOilPressure();
+      renderTach();
+    }
+  }
+}
+
+void maybeFlashWarningScreen(unsigned long nowMs) {
+    if (oilTemp >= oilEmergTemp 
+      || cyl2Temp >= cylEmergTemp 
+      || cyl3Temp >= cylEmergTemp 
+      || rpm >= tachEmerg 
+      || (oilPressure > oilEmergPressure && lastOilTempColour == TFT_GREEN)) // Only warn on high oil pressure if we are up to temperature
+    {
       if (nowMs - lastScreenFlash > screenFlashPeriod) {
         lastScreenFlash = nowMs;
         if (globalBgColour == TFT_BLACK) {
@@ -140,18 +137,40 @@ void loop() {
         tft.fillScreen(globalBgColour);
       }
     }
-    if (oilTemp < oilEmergTemp && cyl2Temp < cylEmergTemp && cyl3Temp < cylEmergTemp && rpm < tachEmerg && globalBgColour == TFT_RED) {
+    if (oilTemp < oilEmergTemp && cyl2Temp < cylEmergTemp && cyl3Temp < cylEmergTemp && rpm < tachEmerg && (oilPressure < oilEmergPressure && lastOilTempColour == TFT_GREEN) && globalBgColour == TFT_RED) {
       globalBgColour = TFT_BLACK;
       tft.fillScreen(globalBgColour);
     }
+}
 
-    if (nowMs - lastUiUpdate > uiPeriod) {
-      lastUiUpdate = nowMs;
-      renderCylinder2();
-      renderCylinder3();
-      renderOilTemp();
-      renderOilPressure();
-      renderTach();
+void checkForTouch() {
+  if (enableTouch && ts.tirqTouched() && ts.touched()) {
+    mode = (displayMode)((mode + 1) % 3);
+    tft.fillScreen(globalBgColour);
+    delay(250);
+  }
+}
+
+void calculateAvgRpm() {
+  float sum = 0;
+  for (int i = 0; i < 10; i++) {
+    sum += rpmArr[i];
+  }
+  rpm = sum / 10;
+}
+
+void handlePulse() {
+  pulse = false;
+  lastPulseMicros = pulseMicros;
+  pulseMicros = micros();
+  unsigned long tentativeRpm = 30000000 / (pulseMicros - lastPulseMicros);
+  if (tentativeRpm < 10000) { // Filter out noise
+    float avgRatio = rpm / (float)tentativeRpm;
+    float prevRatio = rpmArr[rpmPtr] / (float)tentativeRpm;
+    int nextPtr = (rpmPtr + 1) % 10;
+    if (avgRatio < 1.3 || prevRatio < 1.2 || rpmArr[nextPtr] == 0) {
+      rpmArr[nextPtr] = tentativeRpm;
+      rpmPtr = nextPtr;
     }
   }
 }
@@ -391,6 +410,4 @@ void renderCylinder3() {
 
 void pulseDetected() {
   pulse = true;
-  //lastPulseMicros = pulseMicros;
-  //pulseMicros = micros();
 }
