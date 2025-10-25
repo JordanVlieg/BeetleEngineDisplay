@@ -168,7 +168,9 @@ void handlePulse() {
     float avgRatio = rpm / (float)tentativeRpm;
     float prevRatio = rpmArr[rpmPtr] / (float)tentativeRpm;
     int nextPtr = (rpmPtr + 1) % 10;
-    if (avgRatio < 1.3 || prevRatio < 1.2 || rpmArr[nextPtr] == 0) {
+    bool isntTooFast = avgRatio < 1.4 || prevRatio < 1.4;
+    bool isntTooSlow = avgRatio > 0.5;
+    if ((isntTooFast && isntTooSlow) || rpmArr[nextPtr] == 0) {
       rpmArr[nextPtr] = tentativeRpm;
       rpmPtr = nextPtr;
     }
@@ -314,7 +316,7 @@ void renderTach() {
   static uint8_t radius;
   uint32_t colour = TFT_GREEN;
 
-  int displayRpm = rpm / 10;
+  int displayRpm = (int)rpm / 10;
 
   if (mode == TEMP) {
     return;
