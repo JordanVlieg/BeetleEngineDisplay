@@ -28,7 +28,6 @@ const unsigned long updateInterval = 1000;
 const bool enableTouch = true;
 
 // Variables
-volatile bool tachPulse = true;
 int oilTemp = 0; int cyl2Temp = 0; int cyl3Temp = 0; int oilPressure = 0;
 unsigned long lastScreenFlash = 0;
 unsigned long lastUiUpdate = 0;
@@ -102,23 +101,18 @@ void setup(void) {
 }
 
 void loop() {
-  if (tachPulse) {
-    handlePulse();
-  }
-  else {
-    calculateAvgRpm();
-    checkForTouch();
-    unsigned long nowMs = millis();
-    maybeFlashWarningScreen(nowMs);
-    
-    if (nowMs - lastUiUpdate > uiPeriod) {
-      lastUiUpdate = nowMs;
-      renderCylinder2();
-      renderCylinder3();
-      renderOilTemp();
-      renderOilPressure();
-      renderTach();
-    }
+  handlePulse();
+  checkForTouch();
+  
+  unsigned long nowMs = millis();
+  maybeFlashWarningScreen(nowMs);
+  if (nowMs - lastUiUpdate > uiPeriod) {
+    lastUiUpdate = nowMs;
+    renderCylinder2();
+    renderCylinder3();
+    renderOilTemp();
+    renderOilPressure();
+    renderTach();
   }
 }
 
@@ -155,80 +149,73 @@ void checkForTouch() {
 
 void calculateAvgRpm() {
   float sum = 0;
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 5; i++) {
     sum += rpmArr[i];
   }
-  rpm = sum / 10;
+  rpm = sum / 5;
 }
 
 void handlePulse() {
   unsigned long tentativeRpm = 30000000 / delta;
   float avgRatio = (float)tentativeRpm / rpm;
   float prevRatio = (float)tentativeRpm / rpmArr[rpmPtr];
-  int nextPtr = (rpmPtr + 1) % 10;
-  bool isntTooFast = avgRatio < 1.2 || prevRatio < 1.2;
+  int nextPtr = (rpmPtr + 1) % 5;
+  bool isntTooFast = avgRatio < 1.3 || prevRatio < 1.2;
   bool isntTooSlow = avgRatio > 0.5;
-  if ((isntTooFast && isntTooSlow) || rpmArr[nextPtr] == 0) {
-    tachPulse = false;
+  if ((isntTooFast && isntTooSlow) || rpmArr[nextPtr] < 800) {
     rpmArr[nextPtr] = tentativeRpm;
     rpmPtr = nextPtr;
+    calculateAvgRpm();
   }
 }
 
 void getDataFromWifi(void * pvParameters) {
   NetworkClient client;
-  unsigned long lastFetch = 0;
   for(;;) {
-  // Use NetworkClient class to create TCP connections
-    if (millis() - lastFetch > updateInterval) {
-      if (!client.connect(host, port)) {
-        continue;
-      }
-
-      client.print(String("GET ") + "/csv" + " HTTP/1.1\r\n" + "Host: " + host + "\r\n" + "Connection: close\r\n\r\n");
-
-      unsigned long timeout = millis();
-      while (client.available() == 0) {
-        if (millis() - timeout > 300) {
-          Serial.println(">>> Client Timeout !");
-          client.stop();
-          break;
-        }
-      }
-
-      lastFetch = millis();
-      while (client.available()) {
-        String line = client.readStringUntil('\r');
-        
-        int startIndex = 0;
-        int endIndex = line.indexOf(",", startIndex);
-        int counter = 0;
-        String value;
-
-        while (endIndex != -1) {
-          endIndex = line.indexOf(",", startIndex);
-          if (endIndex == -1) { // No more delimiters found
-            value = line.substring(startIndex);
-          } else {
-            value = line.substring(startIndex, endIndex);
-            startIndex = endIndex + 1;
-          }
-          int t = value.toInt();
-          if (counter == 0) {
-            oilTemp = t;
-          } else if (counter == 1) {
-            oilPressure = t;
-          } else if (counter == 2) {
-            cyl3Temp = t;
-          } else if (counter == 3) {
-            cyl2Temp = t;
-          }
-          counter++;
-        }
-      }
-    } else {
-      vTaskDelay(pdMS_TO_TICKS(updateInterval/2));
+    if (!client.connect(host, port)) {
+      continue;
     }
+    client.print(String("GET ") + "/csv" + " HTTP/1.1\r\n" + "Host: " + host + "\r\n" + "Connection: close\r\n\r\n");
+
+    unsigned long timeout = millis();
+    while (client.available() == 0) {
+      if (millis() - timeout > 300) {
+        Serial.println(">>> Client Timeout !");
+        client.stop();
+        break;
+      }
+    }
+
+    while (client.available()) {
+      String line = client.readStringUntil('\r');
+      
+      int startIndex = 0;
+      int endIndex = line.indexOf(",", startIndex);
+      int counter = 0;
+      String value;
+
+      while (endIndex != -1) {
+        endIndex = line.indexOf(",", startIndex);
+        if (endIndex == -1) { // No more delimiters found
+          value = line.substring(startIndex);
+        } else {
+          value = line.substring(startIndex, endIndex);
+          startIndex = endIndex + 1;
+        }
+        int t = value.toInt();
+        if (counter == 0) {
+          oilTemp = t;
+        } else if (counter == 1) {
+          oilPressure = t;
+        } else if (counter == 2) {
+          cyl3Temp = t;
+        } else if (counter == 3) {
+          cyl2Temp = t;
+        }
+        counter++;
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(updateInterval));
   }
   vTaskDelete(NULL);
 }
@@ -415,6 +402,5 @@ void pulseDetected() {
   if (d > 3000) { // Filter out trash that would be more than 10k RPM
     lastPulseMicros = pulseMicros;
     delta = d;
-    tachPulse = true;
   }
 }
