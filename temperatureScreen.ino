@@ -18,6 +18,8 @@
 // Constants
 const uint16_t port = 80;
 const char *host = "192.168.4.1";
+const int magicNum = 30000000;
+const int arrayLength = 100;
 const int tachStart = 0;const int tachLow = 700;const int tachWarn = 4200;const int tachEmerg = 5000;
 const int oilStartTemp = 50; const int oilLowTemp = 70;const int oilWarnTemp = 106;const int oilEmergTemp = 115;
 const int cylStartTemp = 110;const int cylLowTemp = 130;const int cylWarnTemp = 185;const int cylEmergTemp = 205;
@@ -35,8 +37,9 @@ float rpm = 0;
 volatile unsigned long lastPulseMicros = 0;
 volatile unsigned long pulseMicros = 10;
 volatile unsigned long delta = 10;
-float rpmArr[10] = {0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
+float rpmArr[arrayLength];
 int rpmPtr = 0;
+int leftPtr = 0;
 uint32_t lastOilTempColour = TFT_BLACK;uint32_t lastOilPressureColour = TFT_BLACK;uint32_t lastCyl2Colour = TFT_BLACK;uint32_t lastCyl3Colour = TFT_BLACK;uint32_t lastTachColour = TFT_BLACK;uint32_t globalBgColour = TFT_BLACK;
 WiFiMulti WiFiMulti;
 TaskHandle_t wifiTask;
@@ -147,25 +150,33 @@ void checkForTouch() {
   }
 }
 
+2 6
+5 (4)
+
 void calculateAvgRpm() {
-  float sum = 0;
-  for (int i = 0; i < 5; i++) {
-    sum += rpmArr[i];
+  int sparksSinceLast = ((rpmPtr - leftPtr + arrayLength) % arrayLength) + 1;
+  double sum = 0;
+  for (int i = 1; i < sparksSinceLast; i++) {
+    sum += rpmArr[((leftPtr + i) % arrayLength)];
   }
-  rpm = sum / 5;
+  leftPtr = rpmPtr;
+  rpm = sum / sparksSinceLast;
 }
 
 void handlePulse() {
-  unsigned long tentativeRpm = 30000000 / delta;
+  unsigned long tentativeRpm = magicNum / delta;
   float avgRatio = (float)tentativeRpm / rpm;
   float prevRatio = (float)tentativeRpm / rpmArr[rpmPtr];
-  int nextPtr = (rpmPtr + 1) % 5;
   bool isntTooFast = avgRatio < 1.3 || prevRatio < 1.2;
   bool isntTooSlow = avgRatio > 0.5;
-  if ((isntTooFast && isntTooSlow) || rpmArr[nextPtr] < 800) {
+  int nextPtr = (rpmPtr + 1) % arrayLength;
+  if ((isntTooFast && isntTooSlow) || rpmArr[nextPtr] < tachLow || rpmArr[nextPtr] > tachEmerg) {
     rpmArr[nextPtr] = tentativeRpm;
     rpmPtr = nextPtr;
-    calculateAvgRpm();
+  } else {
+    // Bad reading.  Skip pulse.
+    pulseMicros = micros();
+    lastPulseMicros = pulseMicros;
   }
 }
 
@@ -297,6 +308,7 @@ void renderOilPressure() {
 }
 
 void renderTach() {
+  calculateAvgRpm();
   static int16_t xpos;
   static int16_t ypos;
   static uint8_t radius;
@@ -399,7 +411,7 @@ void renderCylinder3() {
 void pulseDetected() {
   pulseMicros = micros();
   unsigned long d = pulseMicros - lastPulseMicros;
-  if (d > 3000) { // Filter out trash that would be more than 10k RPM
+  if (d > magicNum / (tachEmerg + 1000)) { // Filter out trash that would be above redline
     lastPulseMicros = pulseMicros;
     delta = d;
   }
