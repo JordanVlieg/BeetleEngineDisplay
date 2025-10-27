@@ -25,8 +25,8 @@ const int oilStartTemp = 50; const int oilLowTemp = 70;const int oilWarnTemp = 1
 const int cylStartTemp = 110;const int cylLowTemp = 130;const int cylWarnTemp = 185;const int cylEmergTemp = 205;
 const int oilStartPressure = 0;const int oilWarnPressure = 50;const int oilEmergPressure = 55;
 const unsigned long screenFlashPeriod = 750;
-const unsigned long uiPeriod = 250;
-const unsigned long updateInterval = 1000;
+const unsigned long uiPeriod = 200;
+const unsigned long updateInterval = 800;
 const bool enableTouch = true;
 
 // Variables
@@ -149,9 +149,6 @@ void checkForTouch() {
     vTaskDelay(pdMS_TO_TICKS(250));
   }
 }
-
-2 6
-5 (4)
 
 void calculateAvgRpm() {
   int sparksSinceLast = ((rpmPtr - leftPtr + arrayLength) % arrayLength) + 1;
