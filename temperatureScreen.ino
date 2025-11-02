@@ -151,13 +151,15 @@ void checkForTouch() {
 }
 
 void calculateAvgRpm() {
-  int sparksSinceLast = ((rpmPtr - leftPtr + arrayLength) % arrayLength) + 1;
-  double sum = 0;
-  for (int i = 1; i < sparksSinceLast; i++) {
-    sum += rpmArr[((leftPtr + i) % arrayLength)];
+  int sparksSinceLast = ((rpmPtr - leftPtr + arrayLength) % arrayLength);
+  if (sparksSinceLast > 0) {
+    double sum = 0;
+    for (int i = 1; i < sparksSinceLast; i++) {
+      sum += rpmArr[((leftPtr + i) % arrayLength)];
+    }
+    leftPtr = rpmPtr;
+    rpm = sum / sparksSinceLast;
   }
-  leftPtr = rpmPtr;
-  rpm = sum / sparksSinceLast;
 }
 
 void handlePulse() {
@@ -406,10 +408,14 @@ void renderCylinder3() {
 }
 
 void pulseDetected() {
-  pulseMicros = micros();
-  unsigned long d = pulseMicros - lastPulseMicros;
-  if (d > magicNum / (tachEmerg + 1000)) { // Filter out trash that would be above redline
-    lastPulseMicros = pulseMicros;
-    delta = d;
+  if (pulseMicros == lastPulseMicros) {
+    lastPulseMicros = micros();
+  } else {
+    pulseMicros = micros();
+    unsigned long d = pulseMicros - lastPulseMicros;
+    if (d > magicNum / (tachEmerg + 1000)) { // Filter out trash that would be above redline
+      lastPulseMicros = pulseMicros;
+      delta = d;
+    }
   }
 }
