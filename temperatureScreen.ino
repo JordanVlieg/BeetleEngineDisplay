@@ -28,18 +28,20 @@ const unsigned long screenFlashPeriod = 750;
 const unsigned long uiPeriod = 200;
 const unsigned long updateInterval = 800;
 const bool enableTouch = true;
+const int coilPin = 21;
 
 // Variables
 int oilTemp = 0; int cyl2Temp = 0; int cyl3Temp = 0; int oilPressure = 0;
 unsigned long lastScreenFlash = 0;
 unsigned long lastUiUpdate = 0;
 float rpm = 0;
-volatile unsigned long lastPulseMicros = 0;
-volatile unsigned long pulseMicros = 10;
-volatile unsigned long delta = 10;
+unsigned long lastRisingEdgeMicros = 0;
 float rpmArr[arrayLength];
 int rpmPtr = 0;
 int leftPtr = 0;
+int coilState = LOW;
+int lastCoilState = LOW;
+bool hasCleanRising = false;
 uint32_t lastOilTempColour = TFT_BLACK;uint32_t lastOilPressureColour = TFT_BLACK;uint32_t lastCyl2Colour = TFT_BLACK;uint32_t lastCyl3Colour = TFT_BLACK;uint32_t lastTachColour = TFT_BLACK;uint32_t globalBgColour = TFT_BLACK;
 WiFiMulti WiFiMulti;
 TaskHandle_t wifiTask;
@@ -57,8 +59,6 @@ enum displayMode {
 
 void setup(void) {
   Serial.begin(115200);
-  lastPulseMicros = micros();
-
   delay(10);
 
   mySpi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
@@ -73,7 +73,7 @@ void setup(void) {
     Serial.println("Render initialize error");
     return;
   }
-
+ 
   WiFiMulti.addAP("combee", "blackandyellow");
 
   ofr.setDrawer(tft);
@@ -87,8 +87,7 @@ void setup(void) {
     delay(500);
   }
 
-  pinMode(16, INPUT);
-  attachInterrupt(digitalPinToInterrupt(16), pulseDetected, RISING);
+  pinMode(coilPin, INPUT);
 
     //create a task that will be executed in the Task1code() function, with priority 1 and executed on core 0
   xTaskCreatePinnedToCore(
@@ -104,49 +103,71 @@ void setup(void) {
 }
 
 void loop() {
-  handlePulse();
+  rpmTracking();
   checkForTouch();
   
   unsigned long nowMs = millis();
   maybeFlashWarningScreen(nowMs);
   if (nowMs - lastUiUpdate > uiPeriod) {
+    Serial.println("UI UPDATE");
     lastUiUpdate = nowMs;
     renderCylinder2();
     renderCylinder3();
     renderOilTemp();
     renderOilPressure();
     renderTach();
+    hasCleanRising = false;
+  }
+}
+
+void rpmTracking() {
+  coilState = digitalRead(coilPin);
+  if (lastCoilState != coilState) {
+    lastCoilState = coilState;
+    if (coilState == HIGH) {
+      unsigned long pulseMicros = micros();
+      float tentativeRpm = (float)magicNum / (float)(pulseMicros - lastRisingEdgeMicros);
+      lastRisingEdgeMicros = pulseMicros;
+      if (hasCleanRising) {
+        rpmArr[rpmPtr] = tentativeRpm;
+        rpmPtr++;
+      }
+      hasCleanRising = true;
+    }
   }
 }
 
 void maybeFlashWarningScreen(unsigned long nowMs) {
+  if (nowMs - lastScreenFlash > screenFlashPeriod) {
     if (oilTemp >= oilEmergTemp 
       || cyl2Temp >= cylEmergTemp 
       || cyl3Temp >= cylEmergTemp 
       || rpm >= tachEmerg 
       || (oilPressure > oilEmergPressure && lastOilTempColour == TFT_GREEN)) // Only warn on high oil pressure if we are up to temperature
     {
-      if (nowMs - lastScreenFlash > screenFlashPeriod) {
-        lastScreenFlash = nowMs;
-        if (globalBgColour == TFT_BLACK) {
-          globalBgColour = TFT_RED;
-        } else {
-          globalBgColour = TFT_BLACK;
-        }
-        tft.fillScreen(globalBgColour);
+      lastScreenFlash = nowMs;
+      if (globalBgColour == TFT_BLACK) {
+        globalBgColour = TFT_RED;
+      } else {
+        globalBgColour = TFT_BLACK;
       }
+      tft.fillScreen(globalBgColour);
+      hasCleanRising = false;
     }
     if (oilTemp < oilEmergTemp && cyl2Temp < cylEmergTemp && cyl3Temp < cylEmergTemp && rpm < tachEmerg && (oilPressure < oilEmergPressure && lastOilTempColour == TFT_GREEN) && globalBgColour == TFT_RED) {
       globalBgColour = TFT_BLACK;
       tft.fillScreen(globalBgColour);
+      hasCleanRising = false;
     }
+  }
 }
 
 void checkForTouch() {
-  if (enableTouch && ts.tirqTouched() && ts.touched()) {
+  if (ts.tirqTouched() && ts.touched()) {
     mode = (displayMode)((mode + 1) % 3);
     tft.fillScreen(globalBgColour);
     vTaskDelay(pdMS_TO_TICKS(250));
+    hasCleanRising = false;
   }
 }
 
@@ -159,23 +180,6 @@ void calculateAvgRpm() {
     }
     leftPtr = rpmPtr;
     rpm = sum / sparksSinceLast;
-  }
-}
-
-void handlePulse() {
-  unsigned long tentativeRpm = magicNum / delta;
-  float avgRatio = (float)tentativeRpm / rpm;
-  float prevRatio = (float)tentativeRpm / rpmArr[rpmPtr];
-  bool isntTooFast = avgRatio < 1.3 || prevRatio < 1.2;
-  bool isntTooSlow = avgRatio > 0.5;
-  int nextPtr = (rpmPtr + 1) % arrayLength;
-  if ((isntTooFast && isntTooSlow) || rpmArr[nextPtr] < tachLow || rpmArr[nextPtr] > tachEmerg) {
-    rpmArr[nextPtr] = tentativeRpm;
-    rpmPtr = nextPtr;
-  } else {
-    // Bad reading.  Skip pulse.
-    pulseMicros = micros();
-    lastPulseMicros = pulseMicros;
   }
 }
 
@@ -404,18 +408,5 @@ void renderCylinder3() {
   arcMeter(xpos, ypos, radius, cyl3Temp, cylStartTemp, cylEmergTemp, (colour != lastCyl3Colour), colour, globalBgColour, "C3", true);
   if (colour != lastCyl3Colour) {
     lastCyl3Colour = colour;
-  }
-}
-
-void pulseDetected() {
-  if (pulseMicros == lastPulseMicros) {
-    lastPulseMicros = micros();
-  } else {
-    pulseMicros = micros();
-    unsigned long d = pulseMicros - lastPulseMicros;
-    if (d > magicNum / (tachEmerg + 1000)) { // Filter out trash that would be above redline
-      lastPulseMicros = pulseMicros;
-      delta = d;
-    }
   }
 }
