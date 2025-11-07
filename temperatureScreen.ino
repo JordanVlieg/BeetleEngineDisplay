@@ -25,10 +25,10 @@ const int oilStartTemp = 50; const int oilLowTemp = 70;const int oilWarnTemp = 1
 const int cylStartTemp = 110;const int cylLowTemp = 130;const int cylWarnTemp = 185;const int cylEmergTemp = 205;
 const int oilStartPressure = 0;const int oilWarnPressure = 50;const int oilEmergPressure = 55;
 const unsigned long screenFlashPeriod = 750;
-const unsigned long uiPeriod = 200;
-const unsigned long updateInterval = 800;
-const bool enableTouch = true;
-const int coilPin = 21;
+const unsigned long uiPeriod = 250;
+const unsigned long updateInterval = 1000;
+const int coilPin = 22;
+const bool colourIssues = true;
 
 // Variables
 int oilTemp = 0; int cyl2Temp = 0; int cyl3Temp = 0; int oilPressure = 0;
@@ -63,10 +63,14 @@ void setup(void) {
 
   mySpi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
   ts.begin(mySpi);
-  ts.setRotation(1);
-
+  ts.setRotation(3);
   tft.begin();
-  tft.setRotation(1);
+  tft.setRotation(3);
+
+  if (colourIssues) {
+    tft.invertDisplay(true);
+  }
+
   tft.fillScreen(TFT_BLACK);
 
   if (ofr.loadFont(TTF_FONT, sizeof(TTF_FONT))) {
@@ -89,7 +93,7 @@ void setup(void) {
 
   pinMode(coilPin, INPUT);
 
-    //create a task that will be executed in the Task1code() function, with priority 1 and executed on core 0
+  // create a task that will be executed in the Task1code() function, with priority 1 and executed on core 0
   xTaskCreatePinnedToCore(
                     getDataFromWifi,
                     "WifiTask",
@@ -109,7 +113,6 @@ void loop() {
   unsigned long nowMs = millis();
   maybeFlashWarningScreen(nowMs);
   if (nowMs - lastUiUpdate > uiPeriod) {
-    Serial.println("UI UPDATE");
     lastUiUpdate = nowMs;
     renderCylinder2();
     renderCylinder3();
@@ -118,6 +121,8 @@ void loop() {
     renderTach();
     hasCleanRising = false;
   }
+  // This delay allows the input pin to settle, and prevents ridiculous RPM readings.
+  delay(2);
 }
 
 void rpmTracking() {
@@ -130,44 +135,10 @@ void rpmTracking() {
       lastRisingEdgeMicros = pulseMicros;
       if (hasCleanRising) {
         rpmArr[rpmPtr] = tentativeRpm;
-        rpmPtr++;
+        rpmPtr = (rpmPtr + 1) % arrayLength;
       }
       hasCleanRising = true;
     }
-  }
-}
-
-void maybeFlashWarningScreen(unsigned long nowMs) {
-  if (nowMs - lastScreenFlash > screenFlashPeriod) {
-    if (oilTemp >= oilEmergTemp 
-      || cyl2Temp >= cylEmergTemp 
-      || cyl3Temp >= cylEmergTemp 
-      || rpm >= tachEmerg 
-      || (oilPressure > oilEmergPressure && lastOilTempColour == TFT_GREEN)) // Only warn on high oil pressure if we are up to temperature
-    {
-      lastScreenFlash = nowMs;
-      if (globalBgColour == TFT_BLACK) {
-        globalBgColour = TFT_RED;
-      } else {
-        globalBgColour = TFT_BLACK;
-      }
-      tft.fillScreen(globalBgColour);
-      hasCleanRising = false;
-    }
-    if (oilTemp < oilEmergTemp && cyl2Temp < cylEmergTemp && cyl3Temp < cylEmergTemp && rpm < tachEmerg && (oilPressure < oilEmergPressure && lastOilTempColour == TFT_GREEN) && globalBgColour == TFT_RED) {
-      globalBgColour = TFT_BLACK;
-      tft.fillScreen(globalBgColour);
-      hasCleanRising = false;
-    }
-  }
-}
-
-void checkForTouch() {
-  if (ts.tirqTouched() && ts.touched()) {
-    mode = (displayMode)((mode + 1) % 3);
-    tft.fillScreen(globalBgColour);
-    vTaskDelay(pdMS_TO_TICKS(250));
-    hasCleanRising = false;
   }
 }
 
@@ -180,6 +151,40 @@ void calculateAvgRpm() {
     }
     leftPtr = rpmPtr;
     rpm = sum / sparksSinceLast;
+  }
+}
+
+void maybeFlashWarningScreen(unsigned long nowMs) {
+  if (oilTemp >= oilEmergTemp 
+    || cyl2Temp >= cylEmergTemp 
+    || cyl3Temp >= cylEmergTemp 
+    || rpm >= tachEmerg 
+    || (oilPressure > oilEmergPressure && lastOilTempColour == TFT_GREEN)) // Only warn on high oil pressure if we are up to temperature
+  {
+    if (nowMs - lastScreenFlash > screenFlashPeriod) {
+      lastScreenFlash = nowMs;
+      if (globalBgColour == TFT_BLACK) {
+        globalBgColour = TFT_RED;
+      } else {
+        globalBgColour = TFT_BLACK;
+      }
+      tft.fillScreen(globalBgColour);
+      hasCleanRising = false;
+    }
+  }
+  if (oilTemp < oilEmergTemp && cyl2Temp < cylEmergTemp && cyl3Temp < cylEmergTemp && rpm < tachEmerg && (oilPressure < oilEmergPressure && lastOilTempColour == TFT_GREEN) && globalBgColour == TFT_RED) {
+    globalBgColour = TFT_BLACK;
+    tft.fillScreen(globalBgColour);
+    hasCleanRising = false;
+  }
+}
+
+void checkForTouch() {
+  if (ts.tirqTouched() && ts.touched()) {
+    mode = (displayMode)((mode + 1) % 3);
+    tft.fillScreen(globalBgColour);
+    vTaskDelay(pdMS_TO_TICKS(250));
+    hasCleanRising = false;
   }
 }
 
@@ -312,6 +317,7 @@ void renderOilPressure() {
 
 void renderTach() {
   calculateAvgRpm();
+  Serial.println("RPM:" + String(rpm));
   static int16_t xpos;
   static int16_t ypos;
   static uint8_t radius;
