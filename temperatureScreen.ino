@@ -18,7 +18,7 @@
 // Constants
 const uint16_t port = 80;
 const char *host = "192.168.4.1";
-const int magicNum = 30000000;
+float magicNum = 30000000;
 const int arrayLength = 100;
 const int tachStart = 0;const int tachLow = 700;const int tachWarn = 4200;const int tachEmerg = 5000;
 const int oilStartTemp = 50; const int oilLowTemp = 70;const int oilWarnTemp = 106;const int oilEmergTemp = 115;
@@ -29,6 +29,7 @@ const unsigned long uiPeriod = 250;
 const unsigned long updateInterval = 1000;
 const int coilPin = 22;
 const bool colourIssues = true;
+const int measureDelayMicros = 2000;
 
 // Variables
 int oilTemp = 0; int cyl2Temp = 0; int cyl3Temp = 0; int oilPressure = 0;
@@ -121,17 +122,18 @@ void loop() {
     renderTach();
     hasCleanRising = false;
   }
-  // This delay allows the input pin to settle, and prevents ridiculous RPM readings.
-  delay(2);
 }
 
 void rpmTracking() {
+  // This delay allows the input pin to settle, and prevents ridiculous RPM readings.
+  delayMicroseconds(measureDelayMicros);
   coilState = digitalRead(coilPin);
   if (lastCoilState != coilState) {
+    unsigned long pulseMicros = micros();
+    unsigned long delta = pulseMicros - lastRisingEdgeMicros;
     lastCoilState = coilState;
     if (coilState == HIGH) {
-      unsigned long pulseMicros = micros();
-      float tentativeRpm = (float)magicNum / (float)(pulseMicros - lastRisingEdgeMicros);
+      float tentativeRpm = magicNum / (float)delta;
       lastRisingEdgeMicros = pulseMicros;
       if (hasCleanRising) {
         rpmArr[rpmPtr] = tentativeRpm;
@@ -146,7 +148,7 @@ void calculateAvgRpm() {
   int sparksSinceLast = ((rpmPtr - leftPtr + arrayLength) % arrayLength);
   if (sparksSinceLast > 0) {
     double sum = 0;
-    for (int i = 1; i < sparksSinceLast; i++) {
+    for (int i = 0; i < sparksSinceLast; i++) {
       sum += rpmArr[((leftPtr + i) % arrayLength)];
     }
     leftPtr = rpmPtr;
