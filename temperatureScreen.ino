@@ -64,9 +64,9 @@ void setup(void) {
 
   mySpi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
   ts.begin(mySpi);
-  ts.setRotation(3);
+  ts.setRotation(0);
   tft.begin();
-  tft.setRotation(3);
+  tft.setRotation(0);
 
   if (colourIssues) {
     tft.invertDisplay(true);
@@ -85,7 +85,7 @@ void setup(void) {
   ofr.setFontColor(TFT_WHITE);
   ofr.setFontSize(50);
   ofr.setCursor(10, 10);
-  ofr.printf("Connecting to WiFi");
+  ofr.printf("Finding WiFi");
 
   while (WiFiMulti.run() != WL_CONNECTED) {
     Serial.print("Waiting to connect to wifi");
@@ -251,12 +251,12 @@ void renderOilTemp() {
     return;
   } else if (mode == TEMP) {
     radius = 80;
-    xpos = 150;
-    ypos = 160;
+    xpos = 80;
+    ypos = 240;
   } else if (mode == ALL) {
     radius = 40;
     xpos = 40;
-    ypos = 200;
+    ypos = 280;
   }
 
   if (oilTemp < oilLowTemp) {
@@ -288,21 +288,10 @@ void renderOilPressure() {
     return;
   } else if (mode == ALL) {
     radius = 40;
-    xpos = 290;
-    ypos = 200;
+    xpos = 210;
+    ypos = 280;
   }
 
-  // Only do this calculation if we are in normal running RPM range.
-  // if (rpm > 1000 && rpm < 10000) {
-  //   float denom = (rpm / (float)1000);
-  //   float factor = (float) oilPressure / denom;
-  //   if (factor < 9.0 || factor > 17.0) {
-  //     colour = TFT_ORANGE;
-  //   } 
-  //   if (factor < 8.0 || factor > 22.0) {
-  //     colour = TFT_RED;
-  //   } 
-  // }
   if (oilPressure > oilEmergPressure) {
     colour = TFT_RED;
   } 
@@ -319,10 +308,9 @@ void renderOilPressure() {
 
 void renderTach() {
   calculateAvgRpm();
-  Serial.println("RPM:" + String(rpm));
-  static int16_t xpos;
-  static int16_t ypos;
-  static uint8_t radius;
+  static int16_t xpos = 0;
+  static int16_t ypos = 0;
+  static uint8_t radius = 0;
   uint32_t colour = TFT_GREEN;
 
   int displayRpm = (int)rpm / 10;
@@ -333,8 +321,8 @@ void renderTach() {
     radius = 120;
   } else if (mode == ALL) {
     radius = 80;
-    xpos = 160;
-    ypos = 120;
+    xpos = 120;
+    ypos = 160;
   }
 
   if (displayRpm > tachEmerg/10) {
@@ -360,11 +348,11 @@ void renderCylinder2() {
     return;
   } else if (mode == TEMP) {
     radius = 60;
-    xpos = 270;
+    xpos = 200;
     ypos = 60;
   } else if (mode == ALL) {
     radius = 40;
-    xpos = 290;
+    xpos = 210;
     ypos = 40;
   }
 
