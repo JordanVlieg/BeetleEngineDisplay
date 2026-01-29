@@ -21,9 +21,9 @@ const char *host = "192.168.4.1";
 float magicNum = 30000000;
 const int arrayLength = 100;
 const int tachStart = 0;const int tachLow = 700;const int tachWarn = 4200;const int tachEmerg = 5000;
-const int oilStartTemp = 50; const int oilLowTemp = 70;const int oilWarnTemp = 106;const int oilEmergTemp = 115;
-const int cylStartTemp = 110;const int cylLowTemp = 130;const int cylWarnTemp = 185;const int cylEmergTemp = 205;
-const int oilStartPressure = 0;const int oilWarnPressure = 50;const int oilEmergPressure = 55;
+const int oilStartTemp = 50; const int oilLowTemp = 60;const int oilWarnTemp = 105;const int oilEmergTemp = 115;
+const int cylStartTemp = 110;const int cylLowTemp = 130;const int cylWarnTemp = 190;const int cylEmergTemp = 210;
+const int oilStartPressure = 0;const int oilWarnPressure = 70;const int oilEmergPressure = 80;
 const unsigned long screenFlashPeriod = 750;
 const unsigned long uiPeriod = 250;
 const unsigned long updateInterval = 1000;
@@ -56,6 +56,7 @@ enum displayMode {
   ALL = 0,
   TEMP = 1,
   TACH = 2,
+  OFF = 3,
 } mode;
 
 void setup(void) {
@@ -183,7 +184,7 @@ void maybeFlashWarningScreen(unsigned long nowMs) {
 
 void checkForTouch() {
   if (ts.tirqTouched() && ts.touched()) {
-    mode = (displayMode)((mode + 1) % 3);
+    mode = (displayMode)((mode + 1) % 4);
     tft.fillScreen(globalBgColour);
     vTaskDelay(pdMS_TO_TICKS(250));
     hasCleanRising = false;
@@ -247,7 +248,7 @@ void renderOilTemp() {
   static uint8_t radius;
   uint32_t colour = TFT_GREEN;
 
-  if (mode == TACH) {
+  if (mode == TACH || mode == OFF) {
     return;
   } else if (mode == TEMP) {
     radius = 80;
@@ -282,7 +283,7 @@ void renderOilPressure() {
   static uint8_t radius;
   uint32_t colour = TFT_GREEN;
 
-  if (mode == TACH) {
+  if (mode == TACH || mode == OFF) {
     return;
   } else if (mode == TEMP) {
     return;
@@ -315,7 +316,7 @@ void renderTach() {
 
   int displayRpm = (int)rpm / 10;
 
-  if (mode == TEMP) {
+  if (mode == TEMP || mode == OFF) {
     return;
   } else if (mode == TACH) {
     radius = 120;
@@ -344,7 +345,7 @@ void renderCylinder2() {
   static int16_t ypos;
   static uint8_t radius;
 
-  if (mode == TACH) {
+  if (mode == TACH || mode == OFF) {
     return;
   } else if (mode == TEMP) {
     radius = 60;
@@ -378,7 +379,7 @@ void renderCylinder3() {
   static int16_t ypos = 40;
   static uint8_t radius = 40;
 
-  if (mode == TACH) {
+  if (mode == TACH || mode == OFF) {
     return;
   } else if (mode == TEMP) {
     radius = 60;
