@@ -74,24 +74,8 @@ void setup(void) {
   }
 
   tft.fillScreen(TFT_BLACK);
-
-  if (ofr.loadFont(TTF_FONT, sizeof(TTF_FONT))) {
-    Serial.println("Render initialize error");
-    return;
-  }
  
   WiFiMulti.addAP("combee", "blackandyellow");
-
-  ofr.setDrawer(tft);
-  ofr.setFontColor(TFT_WHITE);
-  ofr.setFontSize(50);
-  ofr.setCursor(10, 10);
-  ofr.printf("Finding WiFi");
-
-  while (WiFiMulti.run() != WL_CONNECTED) {
-    Serial.print("Waiting to connect to wifi");
-    delay(500);
-  }
 
   pinMode(coilPin, INPUT);
 
@@ -192,6 +176,11 @@ void checkForTouch() {
 }
 
 void getDataFromWifi(void * pvParameters) {
+  while (WiFiMulti.run() != WL_CONNECTED) {
+    Serial.print("Waiting to connect to wifi");
+    delay(250);
+  }
+
   NetworkClient client;
   for(;;) {
     if (!client.connect(host, port)) {
