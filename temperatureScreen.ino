@@ -74,7 +74,12 @@ void setup(void) {
   }
 
   tft.fillScreen(TFT_BLACK);
- 
+
+  if (ofr.loadFont(TTF_FONT, sizeof(TTF_FONT))) {
+    Serial.println("Render initialize error");
+    return;
+  }
+  
   WiFiMulti.addAP("combee", "blackandyellow");
 
   pinMode(coilPin, INPUT);
