@@ -1,10 +1,11 @@
 #include <SPI.h>
 #include <TFT_eSPI.h> // Hardware-specific library
-#include <XPT2046_Touchscreen.h>
 
+#include <XPT2046_TouchscreenSOFTSPI.h>
 #include "NotoSans_Bold.h"
 #include "OpenFontRender.h"
 #include "meters.h"
+
 
 extern OpenFontRender ofr;
 extern TFT_eSPI tft;            // Invoke custom library with default width and height
