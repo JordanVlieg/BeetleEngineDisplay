@@ -27,7 +27,6 @@ void setup(void) {
     } else {
       sdCardMounted = false;
     }
-    writeToSd();
   }
 
   tsSoftSpi = new SoftSPI (XPT2046_MOSI, XPT2046_MISO, XPT2046_CLK);

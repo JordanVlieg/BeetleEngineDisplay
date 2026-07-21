@@ -8,6 +8,7 @@
 #include "FS.h"
 
 bool sdCardMounted = true;
+int disableLogging = 0;
 unsigned long lastSdWrite = 0;
 uint32_t bootCount = 0;
 
@@ -39,6 +40,9 @@ void saveCounter()
 }
 
 void writeToSd() {
+  if (disableLogging) {
+    return;
+  }
   char filename[64];
   snprintf(filename, sizeof(filename), "/logs/log_%u.txt",
          (unsigned int)bootCount);
@@ -159,6 +163,9 @@ void loadSettings() {
     }
     else if (key == "oil_emerg_pressure") {
       oilEmergPressure = value.toInt();
+    }
+    else if (key == "disable_logging") {
+      disableLogging = value.toInt();
     }
   }
 }
