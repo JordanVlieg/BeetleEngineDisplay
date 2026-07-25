@@ -39,12 +39,29 @@ void saveCounter()
   Serial.println("Saved bootcount");
 }
 
-void writeToSd() {
+void writeLogHeader() {
   if (disableLogging) {
     return;
   }
   char filename[64];
-  snprintf(filename, sizeof(filename), "/logs/log_%u.txt",
+  snprintf(filename, sizeof(filename), "/logs/combee_log_%u.txt",
+         (unsigned int)bootCount);
+  File file = SD.open(filename, FILE_APPEND);
+  if (file)
+  {
+      file.println("RPM, Oil Temp, Cyl 2 Temp, Cyl 3 Temp, Oil Pressure, Last UI Update ms");
+      file.close();
+  } else {
+    Serial.println("Failed to write to SD");
+  }
+}
+
+void writeLogLine() {
+  if (disableLogging) {
+    return;
+  }
+  char filename[64];
+  snprintf(filename, sizeof(filename), "/logs/combee_log_%u.txt",
          (unsigned int)bootCount);
   File file = SD.open(filename, FILE_APPEND);
   if (file)

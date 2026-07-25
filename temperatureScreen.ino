@@ -24,6 +24,7 @@ void setup(void) {
     if(loadCounter()) {
       bootCount++;
       saveCounter();
+      writeLogHeader();
     } else {
       sdCardMounted = false;
     }
@@ -78,7 +79,7 @@ void loop() {
   }
   
   if (sdCardMounted && nowMs - lastSdWrite > sdWritePeriod) {
-    writeToSd();
+    writeLogLine();
     lastSdWrite = nowMs;
   }
 }
