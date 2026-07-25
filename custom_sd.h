@@ -44,7 +44,7 @@ void writeLogHeader() {
     return;
   }
   char filename[64];
-  snprintf(filename, sizeof(filename), "/logs/combee_log_%u.txt",
+  snprintf(filename, sizeof(filename), "/logs/combee_log_%u.csv",
          (unsigned int)bootCount);
   File file = SD.open(filename, FILE_APPEND);
   if (file)
@@ -61,7 +61,7 @@ void writeLogLine() {
     return;
   }
   char filename[64];
-  snprintf(filename, sizeof(filename), "/logs/combee_log_%u.txt",
+  snprintf(filename, sizeof(filename), "/logs/combee_log_%u.csv",
          (unsigned int)bootCount);
   File file = SD.open(filename, FILE_APPEND);
   if (file)
